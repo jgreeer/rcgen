@@ -12,13 +12,13 @@ use crate::crl::CrlDistributionPoint;
 use crate::csr::CertificateSigningRequest;
 use crate::key_pair::{serialize_public_key_der, sign_der, PublicKeyData};
 #[cfg(feature = "crypto")]
-use crate::ring_like::digest;
+use crate::DefaultCryptoProvider;
 #[cfg(feature = "pem")]
 use crate::ENCODE_CONFIG;
 use crate::{
 	oid, write_distinguished_name, write_dt_utc_or_generalized,
-	write_x509_authority_key_identifier, write_x509_extension, DistinguishedName, Error, Issuer,
-	KeyIdMethod, KeyUsagePurpose, SanType, SerialNumber, SigningKey,
+	write_x509_authority_key_identifier, write_x509_extension, CryptoProvider, DistinguishedName,
+	Error, HashAlgorithm, Issuer, KeyIdMethod, KeyUsagePurpose, SanType, SerialNumber, SigningKey,
 };
 
 /// An issued certificate
@@ -137,13 +137,28 @@ impl CertificateParams {
 	///
 	/// The returned [`Certificate`] may be serialized using [`Certificate::der`] and
 	/// [`Certificate::pem`].
+	#[cfg(feature = "crypto")]
 	pub fn signed_by(
 		&self,
 		public_key: &impl PublicKeyData,
 		issuer: &Issuer<'_, impl SigningKey>,
 	) -> Result<Certificate, Error> {
+		self.signed_by_with_provider(public_key, issuer, &DefaultCryptoProvider)
+	}
+
+	/// Generates a new certificate based on the requested parameters, signed by the provided
+	/// issuer, using `provider` for the hashing needed to derive key identifiers and a default
+	/// serial number.
+	///
+	/// Unlike [`signed_by`](Self::signed_by), this is available without the `crypto` feature.
+	pub fn signed_by_with_provider(
+		&self,
+		public_key: &impl PublicKeyData,
+		issuer: &Issuer<'_, impl SigningKey>,
+		provider: &dyn CryptoProvider,
+	) -> Result<Certificate, Error> {
 		Ok(Certificate {
-			der: self.serialize_der_with_signer(public_key, issuer)?,
+			der: self.serialize_der_with_signer(public_key, issuer, provider)?,
 		})
 	}
 
@@ -151,18 +166,45 @@ impl CertificateParams {
 	///
 	/// The returned [`Certificate`] may be serialized using [`Certificate::der`] and
 	/// [`Certificate::pem`].
+	#[cfg(feature = "crypto")]
 	pub fn self_signed(&self, signing_key: &impl SigningKey) -> Result<Certificate, Error> {
+		self.self_signed_with_provider(signing_key, &DefaultCryptoProvider)
+	}
+
+	/// Generates a new self-signed certificate from the given parameters, using `provider` for the
+	/// hashing needed to derive key identifiers and a default serial number.
+	///
+	/// Unlike [`self_signed`](Self::self_signed), this is available without the `crypto` feature.
+	pub fn self_signed_with_provider(
+		&self,
+		signing_key: &impl SigningKey,
+		provider: &dyn CryptoProvider,
+	) -> Result<Certificate, Error> {
 		let issuer = Issuer::from_params(self, signing_key);
 		Ok(Certificate {
-			der: self.serialize_der_with_signer(signing_key, &issuer)?,
+			der: self.serialize_der_with_signer(signing_key, &issuer, provider)?,
 		})
 	}
 
 	/// Calculates a subject key identifier for the certificate subject's public key.
 	/// This key identifier is used in the SubjectKeyIdentifier X.509v3 extension.
+	#[cfg(feature = "crypto")]
 	pub fn key_identifier(&self, key: &impl PublicKeyData) -> Vec<u8> {
+		self.key_identifier_with_provider(key, &DefaultCryptoProvider)
+	}
+
+	/// Calculates a subject key identifier for the certificate subject's public key, using
+	/// `provider` for hashing.
+	///
+	/// Unlike [`key_identifier`](Self::key_identifier), this is available without the `crypto`
+	/// feature.
+	pub fn key_identifier_with_provider(
+		&self,
+		key: &impl PublicKeyData,
+		provider: &dyn CryptoProvider,
+	) -> Vec<u8> {
 		self.key_identifier_method
-			.derive(key.subject_public_key_info())
+			.derive(provider, key.subject_public_key_info())
 	}
 
 	#[cfg(all(test, feature = "x509-parser"))]
@@ -249,20 +291,20 @@ impl CertificateParams {
 	}
 
 	/// Write a certificate's BasicConstraints as defined in RFC 5280.
-	fn write_ca_extensions(&self, writer: &mut DERWriterSeq, pub_key_spki: Option<&[u8]>) {
+	fn write_ca_extensions(&self, writer: &mut DERWriterSeq, subject_key_id: Option<&[u8]>) {
 		let is_ca = match &self.is_ca {
 			IsCa::Ca(bc) => Some(bc),
 			IsCa::ExplicitNoCa => None,
 			IsCa::NoCa => return,
 		};
 
-		if let Some(pub_key_spki) = pub_key_spki {
+		if let Some(subject_key_id) = subject_key_id {
 			write_x509_extension(
 				writer.next(),
 				oid::SUBJECT_KEY_IDENTIFIER,
 				false,
 				|writer| {
-					writer.write_bytes(&self.key_identifier_method.derive(pub_key_spki));
+					writer.write_bytes(subject_key_id);
 				},
 			);
 		}
@@ -436,6 +478,7 @@ impl CertificateParams {
 		&self,
 		pub_key: &K,
 		issuer: &Issuer<'_, impl SigningKey>,
+		provider: &dyn CryptoProvider,
 	) -> Result<CertificateDer<'static>, Error> {
 		// An empty distribution point would be encoded as an empty fullName,
 		// violating GeneralNames ::= SEQUENCE SIZE (1..MAX) OF GeneralName
@@ -458,18 +501,11 @@ impl CertificateParams {
 			if let Some(ref serial) = self.serial_number {
 				writer.next().write_bigint_bytes(serial.as_ref(), true);
 			} else {
-				#[cfg(feature = "crypto")]
-				{
-					let hash = digest::digest(&digest::SHA256, pub_key.der_bytes());
-					// RFC 5280 specifies at most 20 bytes for a serial number
-					let mut sl = hash.as_ref()[0..20].to_vec();
-					sl[0] &= 0x7f; // MSB must be 0 to ensure encoding bignum in 20 bytes
-					writer.next().write_bigint_bytes(&sl, true);
-				}
-				#[cfg(not(feature = "crypto"))]
-				if self.serial_number.is_none() {
-					return Err(Error::MissingSerialNumber);
-				}
+				let hash = provider.hash(HashAlgorithm::Sha256, pub_key.der_bytes());
+				// RFC 5280 specifies at most 20 bytes for a serial number
+				let mut sl = hash[0..20].to_vec();
+				sl[0] &= 0x7f; // MSB must be 0 to ensure encoding bignum in 20 bytes
+				writer.next().write_bigint_bytes(&sl, true);
 			};
 			// Write signature algorithm
 			issuer
@@ -505,7 +541,9 @@ impl CertificateParams {
 			}
 
 			writer.next().write_tagged(Tag::context(3), |writer| {
-				writer.write_sequence(|writer| self.write_extensions(writer, &pub_key_spki, issuer))
+				writer.write_sequence(|writer| {
+					self.write_extensions(writer, &pub_key_spki, issuer, provider)
+				})
 			})?;
 
 			Ok(())
@@ -519,17 +557,14 @@ impl CertificateParams {
 		writer: &mut DERWriterSeq,
 		pub_key_spki: &[u8],
 		issuer: &Issuer<'_, impl SigningKey>,
+		provider: &dyn CryptoProvider,
 	) -> Result<(), Error> {
 		if self.use_authority_key_identifier_extension {
 			write_x509_authority_key_identifier(
 				writer.next(),
-				match issuer.key_identifier_method.as_ref() {
-					KeyIdMethod::PreSpecified(aki) => aki.clone(),
-					#[cfg(feature = "crypto")]
-					_ => issuer
-						.key_identifier_method
-						.derive(issuer.signing_key.subject_public_key_info()),
-				},
+				issuer
+					.key_identifier_method
+					.derive(provider, issuer.signing_key.subject_public_key_info()),
 			);
 		}
 
@@ -576,7 +611,8 @@ impl CertificateParams {
 			);
 		}
 
-		self.write_ca_extensions(writer, Some(pub_key_spki));
+		let subject_key_id = self.key_identifier_method.derive(provider, pub_key_spki);
+		self.write_ca_extensions(writer, Some(subject_key_id.as_slice()));
 
 		for ext in &self.custom_extensions {
 			write_x509_extension(writer.next(), &ext.oid, ext.critical, |writer| {

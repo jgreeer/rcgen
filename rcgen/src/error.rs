@@ -23,6 +23,9 @@ pub enum Error {
 	/// There is no support for generating
 	/// keys for the given algorithm
 	KeyGenerationUnavailable,
+	/// There is no support for loading
+	/// keys for the given algorithm
+	KeyLoadingUnavailable,
 	#[cfg(feature = "x509-parser")]
 	/// Unsupported extension requested in CSR
 	UnsupportedExtension,
@@ -77,6 +80,11 @@ impl fmt::Display for Error {
 			KeyGenerationUnavailable => write!(
 				f,
 				"There is no support for generating \
+				keys for the given algorithm"
+			)?,
+			KeyLoadingUnavailable => write!(
+				f,
+				"There is no support for loading \
 				keys for the given algorithm"
 			)?,
 			UnsupportedSignatureAlgorithm => write!(

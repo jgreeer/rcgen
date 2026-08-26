@@ -4,10 +4,13 @@ use std::hash::Hash;
 use pem::Pem;
 use pki_types::CertificateSigningRequestDer;
 
+#[cfg(feature = "crypto")]
+use crate::DefaultCryptoProvider;
 #[cfg(feature = "pem")]
 use crate::ENCODE_CONFIG;
 use crate::{
-	Certificate, CertificateParams, Error, Issuer, PublicKeyData, SignatureAlgorithm, SigningKey,
+	Certificate, CertificateParams, CryptoProvider, Error, Issuer, PublicKeyData,
+	SignatureAlgorithm, SigningKey,
 };
 #[cfg(feature = "x509-parser")]
 use crate::{DistinguishedName, ExtendedKeyUsagePurpose, IsCa, KeyUsagePurpose, SanType};
@@ -203,11 +206,24 @@ impl CertificateSigningRequestParams {
 	///
 	/// The returned [`Certificate`] may be serialized using [`Certificate::der`] and
 	/// [`Certificate::pem`].
+	#[cfg(feature = "crypto")]
 	pub fn signed_by(&self, issuer: &Issuer<impl SigningKey>) -> Result<Certificate, Error> {
+		self.signed_by_with_provider(issuer, &DefaultCryptoProvider)
+	}
+
+	/// Like [`signed_by`](Self::signed_by), but using `provider` for the hashing needed to derive
+	/// key identifiers and a default serial number.
+	///
+	/// Unlike [`signed_by`](Self::signed_by), this is available without the `crypto` feature.
+	pub fn signed_by_with_provider(
+		&self,
+		issuer: &Issuer<impl SigningKey>,
+		provider: &dyn CryptoProvider,
+	) -> Result<Certificate, Error> {
 		Ok(Certificate {
 			der: self
 				.params
-				.serialize_der_with_signer(&self.public_key, issuer)?,
+				.serialize_der_with_signer(&self.public_key, issuer, provider)?,
 		})
 	}
 }

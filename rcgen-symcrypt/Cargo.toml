@@ -1,0 +1,28 @@
+[package]
+name = "rcgen-symcrypt"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.71"
+license = "MIT OR Apache-2.0"
+description = "SymCrypt-backed CryptoProvider for the rcgen X.509 certificate generator"
+repository = "https://github.com/microsoft/rcgen-symcrypt"
+keywords = ["rcgen", "symcrypt", "x509", "certificate"]
+categories = ["cryptography"]
+readme = "README.md"
+
+[dependencies]
+# NOTE: developed against an rcgen that exposes the `CryptoProvider` abstraction.
+# Once that ships this becomes an ordinary versioned dependency (e.g. `rcgen = "0.15"`);
+# the path dependency here just points at the local, not-yet-released rcgen.
+rcgen = { path = "../rcgen", default-features = false }
+# `symcrypt` dynamically links the system `libsymcrypt`, which must be installed at
+# build and run time. See https://github.com/microsoft/rust-symcrypt.
+symcrypt = "0.5"
+rustls-pki-types = "1"
+
+[dev-dependencies]
+rcgen = { path = "../rcgen", default-features = false, features = ["pem"] }
+
+# An empty `[workspace]` table makes this crate its own workspace root, detaching it
+# from the surrounding rcgen workspace so it behaves like an independent, published crate.
+[workspace]

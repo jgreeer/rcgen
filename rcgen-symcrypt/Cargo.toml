@@ -19,6 +19,8 @@ rcgen = { path = "../rcgen", default-features = false }
 # build and run time. See https://github.com/microsoft/rust-symcrypt.
 symcrypt = "0.5"
 rustls-pki-types = "1"
+# Used to emit exported private keys as PKCS#8 PEM (same crate/version rcgen uses).
+pem = "3.0.2"
 
 [dev-dependencies]
 rcgen = { path = "../rcgen", default-features = false, features = ["pem"] }

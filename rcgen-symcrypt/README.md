@@ -25,6 +25,27 @@ println!("{}", cert.pem());
 Because the provider supplies all of the cryptography rcgen needs, you can depend on rcgen
 with `default-features = false` — no `ring` or `aws-lc-rs` is compiled in.
 
+### Exporting the private key
+
+Use the concrete `SymCryptKeyPair` (the SymCrypt analog of `rcgen::KeyPair`) when you need
+the generated private key — for example to hand the same key to rustls. It exposes
+`serialize_der` / `serialize_pem` (PKCS#8), which the boxed `SigningKey` a provider returns
+cannot.
+
+```rust
+use rcgen::{CertificateParams, PKCS_ECDSA_P256_SHA256};
+use rcgen_symcrypt::{SymCryptKeyPair, SymCryptProvider};
+use rustls_pki_types::PrivatePkcs8KeyDer;
+
+let key = SymCryptKeyPair::generate(&PKCS_ECDSA_P256_SHA256)?;
+let cert = CertificateParams::new(vec!["localhost".to_string()])?
+    .self_signed_with_provider(&key, &SymCryptProvider)?;
+
+// The same SymCrypt-generated key, ready to hand to rustls as a PrivateKeyDer:
+let key_der = PrivatePkcs8KeyDer::from(key.serialize_der());
+```
+
+
 ## Requirements
 
 `symcrypt` dynamically links the system `libsymcrypt`, which must be installed at **build

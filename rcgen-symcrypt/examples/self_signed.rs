@@ -3,7 +3,7 @@
 //!
 //! Run with `cargo run --example self_signed` (requires `libsymcrypt` installed).
 
-use rcgen::{CertificateParams, PKCS_ECDSA_P256_SHA256};
+use rcgen::{CertificateParams, ExportableKey, PKCS_ECDSA_P256_SHA256};
 use rcgen_symcrypt::{SymCryptKeyPair, SymCryptProvider};
 
 fn main() {

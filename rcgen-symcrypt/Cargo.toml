@@ -14,13 +14,11 @@ readme = "README.md"
 # NOTE: developed against an rcgen that exposes the `CryptoProvider` abstraction.
 # Once that ships this becomes an ordinary versioned dependency (e.g. `rcgen = "0.15"`);
 # the path dependency here just points at the local, not-yet-released rcgen.
-rcgen = { path = "../rcgen", default-features = false }
+rcgen = { path = "../rcgen", default-features = false, features = ["pem"] }
 # `symcrypt` dynamically links the system `libsymcrypt`, which must be installed at
 # build and run time. See https://github.com/microsoft/rust-symcrypt.
 symcrypt = "0.5"
 rustls-pki-types = "1"
-# Used to emit exported private keys as PKCS#8 PEM (same crate/version rcgen uses).
-pem = "3.0.2"
 
 [dev-dependencies]
 rcgen = { path = "../rcgen", default-features = false, features = ["pem"] }

@@ -33,7 +33,7 @@ the generated private key — for example to hand the same key to rustls. It exp
 cannot.
 
 ```rust
-use rcgen::{CertificateParams, PKCS_ECDSA_P256_SHA256};
+use rcgen::{CertificateParams, ExportableKey, PKCS_ECDSA_P256_SHA256};
 use rcgen_symcrypt::{SymCryptKeyPair, SymCryptProvider};
 use rustls_pki_types::PrivatePkcs8KeyDer;
 

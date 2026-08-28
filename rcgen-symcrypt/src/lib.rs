@@ -16,6 +16,10 @@
 //! # let _ = (cert, signing_key);
 //! ```
 //!
+//! [`SymCryptKeyPair`] is a concrete, exportable key type (the SymCrypt analog of
+//! [`rcgen::KeyPair`]). Because it implements [`rcgen::ExportableKey`], its private key can be
+//! handed to rustls via `serialize_der` / `serialize_pem`.
+//!
 //! # Requirements
 //!
 //! `symcrypt` dynamically links the system `libsymcrypt`, which must be present at build
@@ -32,10 +36,9 @@
 //! [`PKCS_ECDSA_P256_SHA256`]: rcgen::PKCS_ECDSA_P256_SHA256
 //! [`PKCS_ECDSA_P384_SHA384`]: rcgen::PKCS_ECDSA_P384_SHA384
 
-use pem::Pem;
 use rcgen::{
-	CryptoProvider, Error, HashAlgorithm, PublicKeyData, SignatureAlgorithm, SigningKey,
-	PKCS_ECDSA_P256_SHA256, PKCS_ECDSA_P384_SHA384,
+	CryptoProvider, Error, ExportableKey, HashAlgorithm, PublicKeyData, SignatureAlgorithm,
+	SigningKey, PKCS_ECDSA_P256_SHA256, PKCS_ECDSA_P384_SHA384,
 };
 use rustls_pki_types::PrivateKeyDer;
 use symcrypt::ecc::{CurveType, EcKey, EcKeyUsage};
@@ -59,7 +62,10 @@ impl CryptoProvider for SymCryptProvider {
 		}
 	}
 
-	fn generate_key(&self, alg: &'static SignatureAlgorithm) -> Result<Box<dyn SigningKey>, Error> {
+	fn generate_key(
+		&self,
+		alg: &'static SignatureAlgorithm,
+	) -> Result<Box<dyn SigningKey + Send + Sync>, Error> {
 		Ok(Box::new(SymCryptKeyPair::generate(alg)?))
 	}
 
@@ -67,19 +73,17 @@ impl CryptoProvider for SymCryptProvider {
 		&self,
 		key: &PrivateKeyDer<'_>,
 		alg: &'static SignatureAlgorithm,
-	) -> Result<Box<dyn SigningKey>, Error> {
+	) -> Result<Box<dyn SigningKey + Send + Sync>, Error> {
 		Ok(Box::new(SymCryptKeyPair::from_der(key, alg)?))
 	}
 }
 
-/// A SymCrypt ECDSA key pair together with the rcgen algorithm it signs with.
+/// A SymCrypt ECDSA key pair (P-256 or P-384) together with the rcgen algorithm it signs with.
 ///
-/// This is the SymCrypt analog of [`rcgen::KeyPair`]: a concrete, exportable key type. Use it
-/// directly (rather than the boxed [`SigningKey`] a provider hands back) when you need the
-/// generated private key — for example to hand the same key to rustls — via
-/// [`serialize_der`](Self::serialize_der) or [`serialize_pem`](Self::serialize_pem).
-///
-/// [`SymCryptProvider`] produces these internally, erased as `Box<dyn SigningKey>`.
+/// The SymCrypt analog of [`rcgen::KeyPair`]. It implements [`rcgen::ExportableKey`], so its
+/// private key can be exported (for example to hand to rustls) via
+/// [`serialize_der`](rcgen::ExportableKey::serialize_der) /
+/// [`serialize_pem`](rcgen::ExportableKey::serialize_pem).
 pub struct SymCryptKeyPair {
 	key: EcKey,
 	alg: &'static SignatureAlgorithm,
@@ -90,10 +94,8 @@ pub struct SymCryptKeyPair {
 }
 
 impl SymCryptKeyPair {
-	/// Generate a new SymCrypt key pair for `alg`.
-	///
-	/// Supports [`PKCS_ECDSA_P256_SHA256`] and [`PKCS_ECDSA_P384_SHA384`]; any other algorithm
-	/// returns [`Error::KeyGenerationUnavailable`].
+	/// Generate a new SymCrypt key pair for `alg` ([`PKCS_ECDSA_P256_SHA256`] or
+	/// [`PKCS_ECDSA_P384_SHA384`]).
 	pub fn generate(alg: &'static SignatureAlgorithm) -> Result<Self, Error> {
 		let curve = curve_for(alg).ok_or(Error::KeyGenerationUnavailable)?;
 		let key = EcKey::generate_key_pair(curve, EcKeyUsage::EcDsa)
@@ -102,9 +104,6 @@ impl SymCryptKeyPair {
 	}
 
 	/// Load a SymCrypt key pair from a PKCS#8 or SEC1 DER private key for `alg`.
-	///
-	/// Any algorithm other than [`PKCS_ECDSA_P256_SHA256`] / [`PKCS_ECDSA_P384_SHA384`], or a key
-	/// that can't be parsed, returns [`Error::KeyLoadingUnavailable`].
 	pub fn from_der(
 		key: &PrivateKeyDer<'_>,
 		alg: &'static SignatureAlgorithm,
@@ -116,19 +115,6 @@ impl SymCryptKeyPair {
 		Self::new(key, alg)
 	}
 
-	/// Serialize the key pair (including the private key) as PKCS#8 DER.
-	///
-	/// The result is a valid [`rustls_pki_types::PrivateKeyDer`] PKCS#8 document, so it can be
-	/// handed straight to rustls, e.g. `PrivatePkcs8KeyDer::from(pair.serialize_der())`.
-	pub fn serialize_der(&self) -> Vec<u8> {
-		self.pkcs8_der.clone()
-	}
-
-	/// Serialize the key pair (including the private key) as PKCS#8 PEM (a `PRIVATE KEY` block).
-	pub fn serialize_pem(&self) -> String {
-		pem::encode(&Pem::new("PRIVATE KEY", self.pkcs8_der.clone()))
-	}
-
 	fn new(key: EcKey, alg: &'static SignatureAlgorithm) -> Result<Self, Error> {
 		// SymCrypt exports the raw affine point `X || Y`; X.509 wants the SEC1 uncompressed
 		// encoding, which prefixes `0x04`.
@@ -137,8 +123,7 @@ impl SymCryptKeyPair {
 		spki_public_key.push(0x04);
 		spki_public_key.extend_from_slice(&raw);
 
-		// Cache the PKCS#8 encoding up front so `serialize_der`/`serialize_pem` stay cheap and
-		// infallible, mirroring `rcgen::KeyPair`.
+		// Cache the PKCS#8 encoding so export stays cheap and infallible.
 		let scalar = key
 			.export_private_key()
 			.map_err(|_| Error::RemoteKeyError)?;
@@ -181,6 +166,16 @@ impl SigningKey for SymCryptKeyPair {
 			.map_err(|_| Error::RemoteKeyError)?;
 		Ok(der_encode_ecdsa_signature(&raw))
 	}
+
+	fn as_exportable(&self) -> Option<&dyn ExportableKey> {
+		Some(self)
+	}
+}
+
+impl ExportableKey for SymCryptKeyPair {
+	fn serialize_der(&self) -> Vec<u8> {
+		self.pkcs8_der.clone()
+	}
 }
 
 fn curve_for(alg: &SignatureAlgorithm) -> Option<CurveType> {
@@ -198,12 +193,7 @@ fn der_encode_ecdsa_signature(raw: &[u8]) -> Vec<u8> {
 	let (r, s) = raw.split_at(raw.len() / 2);
 	let mut body = der_integer(r);
 	body.extend(der_integer(s));
-
-	let mut out = Vec::with_capacity(body.len() + 4);
-	out.push(0x30); // SEQUENCE
-	der_push_len(&mut out, body.len());
-	out.extend(body);
-	out
+	der_tlv_encode(0x30, &body)
 }
 
 /// Encode `bytes` (a big-endian magnitude) as a DER positive `INTEGER`.
@@ -221,29 +211,7 @@ fn der_integer(bytes: &[u8]) -> Vec<u8> {
 		value.push(0x00);
 	}
 	value.extend_from_slice(magnitude);
-
-	let mut out = Vec::with_capacity(value.len() + 2);
-	out.push(0x02); // INTEGER
-	der_push_len(&mut out, value.len());
-	out.extend(value);
-	out
-}
-
-/// Append a DER length (definite form) to `out`.
-fn der_push_len(out: &mut Vec<u8>, len: usize) {
-	if len < 0x80 {
-		out.push(len as u8);
-	} else {
-		let mut tmp = Vec::new();
-		let mut l = len;
-		while l > 0 {
-			tmp.push((l & 0xff) as u8);
-			l >>= 8;
-		}
-		tmp.reverse();
-		out.push(0x80 | tmp.len() as u8);
-		out.extend(tmp);
-	}
+	der_tlv_encode(0x02, &value)
 }
 
 /// DER-encoded OID for id-ecPublicKey (1.2.840.10045.2.1), tag and length included.
@@ -302,6 +270,23 @@ fn der_tlv_encode(tag: u8, contents: &[u8]) -> Vec<u8> {
 	der_push_len(&mut out, contents.len());
 	out.extend_from_slice(contents);
 	out
+}
+
+/// Append a DER length (definite form) to `out`.
+fn der_push_len(out: &mut Vec<u8>, len: usize) {
+	if len < 0x80 {
+		out.push(len as u8);
+	} else {
+		let mut tmp = Vec::new();
+		let mut l = len;
+		while l > 0 {
+			tmp.push((l & 0xff) as u8);
+			l >>= 8;
+		}
+		tmp.reverse();
+		out.push(0x80 | tmp.len() as u8);
+		out.extend(tmp);
+	}
 }
 
 /// Extract the raw EC private scalar from a PKCS#8 or SEC1 DER private key.
@@ -387,18 +372,6 @@ mod tests {
 		// r = 0x01, s = 0x02 (2-byte raw signature).
 		let sig = der_encode_ecdsa_signature(&[0x01, 0x02]);
 		assert_eq!(sig, vec![0x30, 0x06, 0x02, 0x01, 0x01, 0x02, 0x01, 0x02]);
-	}
-
-	#[test]
-	fn parses_sec1_scalar() {
-		// SEQUENCE { INTEGER 1, OCTET STRING 0xdeadbeef }
-		let der = [
-			0x30, 0x09, 0x02, 0x01, 0x01, 0x04, 0x04, 0xde, 0xad, 0xbe, 0xef,
-		];
-		assert_eq!(
-			scalar_from_ec_private_key(&der),
-			Some(vec![0xde, 0xad, 0xbe, 0xef])
-		);
 	}
 
 	#[test]

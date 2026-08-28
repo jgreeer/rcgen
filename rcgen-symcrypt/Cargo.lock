@@ -89,7 +89,6 @@ dependencies = [
 name = "rcgen-symcrypt"
 version = "0.1.0"
 dependencies = [
- "pem",
  "rcgen",
  "rustls-pki-types",
  "symcrypt",

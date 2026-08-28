@@ -3,7 +3,9 @@
 //!
 //! Requires `libsymcrypt` at run time.
 
-use rcgen::{CertificateParams, PublicKeyData, PKCS_ECDSA_P256_SHA256, PKCS_ECDSA_P384_SHA384};
+use rcgen::{
+	CertificateParams, ExportableKey, PublicKeyData, PKCS_ECDSA_P256_SHA256, PKCS_ECDSA_P384_SHA384,
+};
 use rcgen_symcrypt::{SymCryptKeyPair, SymCryptProvider};
 use rustls_pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
 
@@ -12,7 +14,7 @@ fn generated_key_exports_and_reloads() {
 	for alg in [&PKCS_ECDSA_P256_SHA256, &PKCS_ECDSA_P384_SHA384] {
 		let key = SymCryptKeyPair::generate(alg).expect("generate key pair");
 
-		// Export to PKCS#8 DER and reload it through the provider's loader.
+		// Export to PKCS#8 DER and reload it through the key type.
 		let der = key.serialize_der();
 		let reloaded = SymCryptKeyPair::from_der(
 			&PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(der.clone())),

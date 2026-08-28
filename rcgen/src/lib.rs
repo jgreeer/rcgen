@@ -55,7 +55,7 @@ pub use error::{Error, InvalidAsn1String};
 pub use key_pair::KeyPair;
 #[cfg(all(feature = "crypto", feature = "aws_lc_rs"))]
 pub use key_pair::RsaKeySize;
-pub use key_pair::{PublicKeyData, SigningKey, SubjectPublicKeyInfo};
+pub use key_pair::{ExportableKey, PublicKeyData, SigningKey, SubjectPublicKeyInfo};
 #[cfg(feature = "pem")]
 use pem::Pem;
 use pki_types::CertificateDer;
@@ -143,7 +143,7 @@ pub fn generate_simple_self_signed(
 pub fn generate_simple_self_signed_with_provider(
 	subject_alt_names: impl Into<Vec<String>>,
 	provider: &dyn CryptoProvider,
-) -> Result<CertifiedKey<Box<dyn SigningKey>>, Error> {
+) -> Result<CertifiedKey<Box<dyn SigningKey + Send + Sync>>, Error> {
 	let signing_key = provider.generate_key(&PKCS_ECDSA_P256_SHA256)?;
 	let cert = CertificateParams::new(subject_alt_names)?
 		.self_signed_with_provider(&signing_key, provider)?;

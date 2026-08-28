@@ -38,8 +38,12 @@ pub trait CryptoProvider {
 
 	/// Generate a new key pair for the given signature algorithm.
 	///
-	/// Defaults to returning [`Error::KeyGenerationUnavailable`].
-	fn generate_key(&self, alg: &'static SignatureAlgorithm) -> Result<Box<dyn SigningKey>, Error> {
+	/// The returned key is `Send + Sync` so it can be shared across threads (matching rustls'
+	/// signing keys). Defaults to returning [`Error::KeyGenerationUnavailable`].
+	fn generate_key(
+		&self,
+		alg: &'static SignatureAlgorithm,
+	) -> Result<Box<dyn SigningKey + Send + Sync>, Error> {
 		let _ = alg;
 		Err(Error::KeyGenerationUnavailable)
 	}
@@ -51,7 +55,7 @@ pub trait CryptoProvider {
 		&self,
 		key: &PrivateKeyDer<'_>,
 		alg: &'static SignatureAlgorithm,
-	) -> Result<Box<dyn SigningKey>, Error> {
+	) -> Result<Box<dyn SigningKey + Send + Sync>, Error> {
 		let _ = (key, alg);
 		Err(Error::KeyLoadingUnavailable)
 	}
@@ -62,7 +66,10 @@ impl<P: CryptoProvider + ?Sized> CryptoProvider for &P {
 		(*self).hash(alg, data)
 	}
 
-	fn generate_key(&self, alg: &'static SignatureAlgorithm) -> Result<Box<dyn SigningKey>, Error> {
+	fn generate_key(
+		&self,
+		alg: &'static SignatureAlgorithm,
+	) -> Result<Box<dyn SigningKey + Send + Sync>, Error> {
 		(*self).generate_key(alg)
 	}
 
@@ -70,7 +77,7 @@ impl<P: CryptoProvider + ?Sized> CryptoProvider for &P {
 		&self,
 		key: &PrivateKeyDer<'_>,
 		alg: &'static SignatureAlgorithm,
-	) -> Result<Box<dyn SigningKey>, Error> {
+	) -> Result<Box<dyn SigningKey + Send + Sync>, Error> {
 		(*self).load_key(key, alg)
 	}
 }
@@ -96,7 +103,10 @@ impl CryptoProvider for DefaultCryptoProvider {
 		digest::digest(algorithm, data).as_ref().to_vec()
 	}
 
-	fn generate_key(&self, alg: &'static SignatureAlgorithm) -> Result<Box<dyn SigningKey>, Error> {
+	fn generate_key(
+		&self,
+		alg: &'static SignatureAlgorithm,
+	) -> Result<Box<dyn SigningKey + Send + Sync>, Error> {
 		Ok(Box::new(crate::KeyPair::generate_for(alg)?))
 	}
 
@@ -104,7 +114,7 @@ impl CryptoProvider for DefaultCryptoProvider {
 		&self,
 		key: &PrivateKeyDer<'_>,
 		alg: &'static SignatureAlgorithm,
-	) -> Result<Box<dyn SigningKey>, Error> {
+	) -> Result<Box<dyn SigningKey + Send + Sync>, Error> {
 		Ok(Box::new(crate::KeyPair::from_der_and_sign_algo(key, alg)?))
 	}
 }

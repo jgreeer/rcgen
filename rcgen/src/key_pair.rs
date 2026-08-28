@@ -449,6 +449,13 @@ impl KeyPair {
 }
 
 #[cfg(feature = "crypto")]
+impl ExportableKey for KeyPair {
+	fn serialize_der(&self) -> Vec<u8> {
+		self.serialized_der.clone()
+	}
+}
+
+#[cfg(feature = "crypto")]
 impl SigningKey for KeyPair {
 	fn sign(&self, msg: &[u8]) -> Result<Vec<u8>, Error> {
 		Ok(match &self.kind {
@@ -472,6 +479,10 @@ impl SigningKey for KeyPair {
 				signature
 			},
 		})
+	}
+
+	fn as_exportable(&self) -> Option<&dyn ExportableKey> {
+		Some(self)
 	}
 }
 
@@ -654,11 +665,17 @@ impl<S: SigningKey + ?Sized> SigningKey for &S {
 	fn sign(&self, msg: &[u8]) -> Result<Vec<u8>, Error> {
 		(*self).sign(msg)
 	}
+	fn as_exportable(&self) -> Option<&dyn ExportableKey> {
+		(*self).as_exportable()
+	}
 }
 
 impl<S: SigningKey + ?Sized> SigningKey for Box<S> {
 	fn sign(&self, msg: &[u8]) -> Result<Vec<u8>, Error> {
 		(**self).sign(msg)
+	}
+	fn as_exportable(&self) -> Option<&dyn ExportableKey> {
+		(**self).as_exportable()
 	}
 }
 
@@ -666,6 +683,35 @@ impl<S: SigningKey + ?Sized> SigningKey for Box<S> {
 pub trait SigningKey: PublicKeyData {
 	/// Signs `msg` using the selected algorithm
 	fn sign(&self, msg: &[u8]) -> Result<Vec<u8>, Error>;
+
+	/// If this key's private material can be exported, returns it as an [`ExportableKey`].
+	///
+	/// Sign-only keys (for example HSM/KMS/TPM-backed keys) return `None`. This lets a caller
+	/// recover the private key from a `dyn SigningKey` — such as one produced by a
+	/// [`CryptoProvider`](crate::CryptoProvider) — without knowing the concrete key type.
+	fn as_exportable(&self) -> Option<&dyn ExportableKey> {
+		None
+	}
+}
+
+/// A [`SigningKey`] whose private key material can be serialized.
+///
+/// This is a distinct capability from [`SigningKey`] because some signers — for example
+/// HSM-, KMS-, or TPM-backed keys — can sign but cannot export their private key. Software
+/// keys such as [`KeyPair`] implement it, so callers (or other crates such as rustls) can
+/// obtain the private key regardless of which backend produced it.
+pub trait ExportableKey: SigningKey {
+	/// Serializes the key pair (including the private key) in PKCS#8 DER.
+	fn serialize_der(&self) -> Vec<u8>;
+
+	/// Serializes the key pair (including the private key) in PKCS#8 PEM.
+	#[cfg(feature = "pem")]
+	fn serialize_pem(&self) -> String {
+		pem::encode_config(
+			&Pem::new("PRIVATE KEY", self.serialize_der()),
+			ENCODE_CONFIG,
+		)
+	}
 }
 
 #[cfg(feature = "crypto")]

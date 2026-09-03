@@ -425,7 +425,6 @@ impl BmpString {
 			)));
 		}
 
-		// FIXME: Update this when `array_chunks` is stabilized.
 		for maybe_char in char::decode_utf16(
 			vec.as_chunks::<2>()
 				.0
@@ -546,7 +545,6 @@ impl UniversalString {
 			));
 		}
 
-		// FIXME: Update this when `array_chunks` is stabilized.
 		for maybe_char in vec
 			.as_chunks::<4>()
 			.0

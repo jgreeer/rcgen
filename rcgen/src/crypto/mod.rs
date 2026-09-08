@@ -56,6 +56,7 @@ pub trait CryptoProvider: std::fmt::Debug + Send + Sync {
 		signature: &[u8],
 	) -> Result<(), Error>;
 }
+
 /// A hash algorithm required by rcgen.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]

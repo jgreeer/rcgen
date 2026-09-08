@@ -170,7 +170,11 @@ impl CertificateParams {
 			.derive(provider, key.subject_public_key_info())
 	}
 
-	#[cfg(all(test, feature = "x509-parser"))]
+	#[cfg(all(
+		test,
+		feature = "x509-parser",
+		any(feature = "ring", feature = "aws_lc_rs")
+	))]
 	pub(crate) fn from_ca_cert_der(ca_cert: &CertificateDer<'_>) -> Result<Self, Error> {
 		let (_remainder, x509) = x509_parser::parse_x509_certificate(ca_cert)
 			.map_err(|_| Error::CouldNotParseCertificate)?;
@@ -203,7 +207,7 @@ impl CertificateParams {
 					self.write_key_usage(writer.next());
 					self.write_subject_alt_names(writer.next());
 					self.write_extended_key_usage(writer.next());
-					self.write_ca_extensions(writer, None, None);
+					self.write_ca_extensions(writer, None);
 					for ext in &self.custom_extensions {
 						write_x509_extension(writer.next(), &ext.oid, ext.critical, |writer| {
 							writer.write_der(ext.content())
@@ -257,8 +261,7 @@ impl CertificateParams {
 	fn write_ca_extensions(
 		&self,
 		writer: &mut DERWriterSeq,
-		pub_key_spki: Option<&[u8]>,
-		provider: Option<&dyn CryptoProvider>,
+		pub_key_spki_and_provider: Option<(&[u8], &dyn CryptoProvider)>,
 	) {
 		let is_ca = match &self.is_ca {
 			IsCa::Ca(bc) => Some(bc),
@@ -266,11 +269,8 @@ impl CertificateParams {
 			IsCa::NoCa => return,
 		};
 
-		if let Some(pub_key_spki) = pub_key_spki {
-			let subject_key_identifier = self.key_identifier_method.derive(
-				provider.expect("a provider is required with public key data"),
-				pub_key_spki,
-			);
+		if let Some((pub_key_spki, provider)) = pub_key_spki_and_provider {
+			let subject_key_identifier = self.key_identifier_method.derive(provider, pub_key_spki);
 			write_x509_extension(
 				writer.next(),
 				oid::SUBJECT_KEY_IDENTIFIER,
@@ -584,7 +584,7 @@ impl CertificateParams {
 			);
 		}
 
-		self.write_ca_extensions(writer, Some(pub_key_spki), Some(provider));
+		self.write_ca_extensions(writer, Some((pub_key_spki, provider)));
 
 		for ext in &self.custom_extensions {
 			write_x509_extension(writer.next(), &ext.oid, ext.critical, |writer| {
@@ -776,7 +776,11 @@ pub enum ExtendedKeyUsagePurpose {
 }
 
 impl ExtendedKeyUsagePurpose {
-	#[cfg(all(test, feature = "x509-parser"))]
+	#[cfg(all(
+		test,
+		feature = "x509-parser",
+		any(feature = "ring", feature = "aws_lc_rs")
+	))]
 	fn from_x509(x509: &x509_parser::certificate::X509Certificate<'_>) -> Result<Vec<Self>, Error> {
 		let extended_key_usage = x509
 			.extended_key_usage()
@@ -841,7 +845,11 @@ pub struct NameConstraints {
 }
 
 impl NameConstraints {
-	#[cfg(all(test, feature = "x509-parser"))]
+	#[cfg(all(
+		test,
+		feature = "x509-parser",
+		any(feature = "ring", feature = "aws_lc_rs")
+	))]
 	fn from_x509(
 		x509: &x509_parser::certificate::X509Certificate<'_>,
 	) -> Result<Option<Self>, Error> {
@@ -894,7 +902,11 @@ pub enum GeneralSubtree {
 }
 
 impl GeneralSubtree {
-	#[cfg(all(test, feature = "x509-parser"))]
+	#[cfg(all(
+		test,
+		feature = "x509-parser",
+		any(feature = "ring", feature = "aws_lc_rs")
+	))]
 	fn from_x509(
 		subtrees: &[x509_parser::extensions::GeneralSubtree<'_>],
 	) -> Result<Vec<Self>, Error> {
@@ -1066,7 +1078,11 @@ pub enum IsCa {
 }
 
 impl IsCa {
-	#[cfg(all(test, feature = "x509-parser"))]
+	#[cfg(all(
+		test,
+		feature = "x509-parser",
+		any(feature = "ring", feature = "aws_lc_rs")
+	))]
 	fn from_x509(x509: &x509_parser::certificate::X509Certificate<'_>) -> Result<Self, Error> {
 		let basic_constraints = x509
 			.basic_constraints()

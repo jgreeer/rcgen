@@ -180,14 +180,6 @@ impl CertificateRevocationListParams {
 		issuer: &Issuer<'_, impl SigningKey>,
 		provider: &dyn CryptoProvider,
 	) -> Result<CertificateRevocationList, Error> {
-		self.validate(issuer)?;
-
-		Ok(CertificateRevocationList {
-			der: self.serialize_der(issuer, provider)?.into(),
-		})
-	}
-
-	fn validate(&self, issuer: &Issuer<'_, impl SigningKey>) -> Result<(), Error> {
 		if self.next_update.le(&self.this_update) {
 			return Err(Error::InvalidCrlNextUpdate);
 		}
@@ -206,7 +198,10 @@ impl CertificateRevocationListParams {
 		{
 			return Err(Error::EmptyCrlDistributionPointUris);
 		}
-		Ok(())
+
+		Ok(CertificateRevocationList {
+			der: self.serialize_der(issuer, provider)?.into(),
+		})
 	}
 
 	fn serialize_der(

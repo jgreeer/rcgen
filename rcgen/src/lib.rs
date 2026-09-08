@@ -338,11 +338,7 @@ pub enum SanType {
 }
 
 impl SanType {
-	#[cfg(all(
-		test,
-		feature = "x509-parser",
-		any(feature = "ring", feature = "aws_lc_rs")
-	))]
+	#[cfg(all(test, feature = "x509-parser"))]
 	fn from_x509(x509: &x509_parser::certificate::X509Certificate<'_>) -> Result<Vec<Self>, Error> {
 		let sans = x509
 			.subject_alternative_name()

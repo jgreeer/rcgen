@@ -288,7 +288,7 @@ pub enum RsaKeySize {
 }
 
 pub(crate) fn sign_der(
-	key: &(impl SigningKey + ?Sized),
+	key: &impl SigningKey,
 	f: impl FnOnce(&mut DERWriterSeq<'_>) -> Result<(), Error>,
 ) -> Result<Vec<u8>, Error> {
 	yasna::try_construct_der(|writer| {

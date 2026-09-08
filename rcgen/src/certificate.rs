@@ -135,7 +135,7 @@ impl CertificateParams {
 	/// [`Certificate::pem`].
 	pub fn signed_by(
 		&self,
-		public_key: &(impl PublicKeyData + ?Sized),
+		public_key: &impl PublicKeyData,
 		issuer: &Issuer<'_, impl SigningKey>,
 		provider: &dyn CryptoProvider,
 	) -> Result<Certificate, Error> {
@@ -150,7 +150,7 @@ impl CertificateParams {
 	/// [`Certificate::pem`].
 	pub fn self_signed(
 		&self,
-		signing_key: &(impl SigningKey + ?Sized),
+		signing_key: &impl SigningKey,
 		provider: &dyn CryptoProvider,
 	) -> Result<Certificate, Error> {
 		let issuer = Issuer::from_params(self, signing_key);
@@ -163,7 +163,7 @@ impl CertificateParams {
 	/// This key identifier is used in the SubjectKeyIdentifier X.509v3 extension.
 	pub fn key_identifier(
 		&self,
-		key: &(impl PublicKeyData + ?Sized),
+		key: &impl PublicKeyData,
 		provider: &dyn CryptoProvider,
 	) -> Vec<u8> {
 		self.key_identifier_method
@@ -448,7 +448,7 @@ impl CertificateParams {
 		})
 	}
 
-	pub(crate) fn serialize_der_with_signer<K: PublicKeyData + ?Sized>(
+	pub(crate) fn serialize_der_with_signer<K: PublicKeyData>(
 		&self,
 		pub_key: &K,
 		issuer: &Issuer<'_, impl SigningKey>,

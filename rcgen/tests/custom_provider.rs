@@ -58,10 +58,10 @@ impl CryptoProvider for TestBackend {
 
 	fn verify(
 		&self,
-		algorithm: &'static SignatureAlgorithm,
-		public_key: &[u8],
 		message: &[u8],
 		signature: &[u8],
+		public_key: &[u8],
+		algorithm: &'static SignatureAlgorithm,
 	) -> Result<(), Error> {
 		assert_eq!(algorithm, &PKCS_ED25519);
 		assert_eq!(public_key, [7; 32]);

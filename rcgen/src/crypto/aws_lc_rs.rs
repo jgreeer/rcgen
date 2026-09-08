@@ -298,10 +298,10 @@ impl CryptoProvider for AwsLcProvider {
 
 	fn verify(
 		&self,
-		algorithm: &'static SignatureAlgorithm,
-		public_key: &[u8],
 		message: &[u8],
 		signature_bytes: &[u8],
+		public_key: &[u8],
+		algorithm: &'static SignatureAlgorithm,
 	) -> Result<(), Error> {
 		#[cfg(feature = "aws_lc_rs")]
 		{
@@ -443,7 +443,7 @@ mod tests {
 			let message = b"stable ML-DSA provider";
 			let signature = loaded.sign(message).unwrap();
 			provider
-				.verify(algorithm, loaded.der_bytes(), message, &signature)
+				.verify(message, &signature, loaded.der_bytes(), algorithm)
 				.unwrap();
 
 			#[cfg(feature = "x509-parser")]

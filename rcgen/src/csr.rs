@@ -141,10 +141,10 @@ impl CertificateSigningRequestParams {
 
 		provider
 			.verify(
-				alg,
-				info.subject_pki.subject_public_key.data.as_ref(),
 				info.raw,
 				csr.signature_value.data.as_ref(),
+				info.subject_pki.subject_public_key.data.as_ref(),
+				alg,
 			)
 			.map_err(|error| match error {
 				Error::UnsupportedSignatureAlgorithm => error,

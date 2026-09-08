@@ -50,10 +50,10 @@ pub trait CryptoProvider: std::fmt::Debug + Send + Sync {
 	/// STRING contents, matching [`PublicKeyData::der_bytes`](crate::PublicKeyData::der_bytes).
 	fn verify(
 		&self,
-		algorithm: &'static SignatureAlgorithm,
-		public_key: &[u8],
 		message: &[u8],
 		signature: &[u8],
+		public_key: &[u8],
+		algorithm: &'static SignatureAlgorithm,
 	) -> Result<(), Error>;
 }
 

@@ -167,10 +167,10 @@ impl CryptoProvider for RingProvider {
 
 	fn verify(
 		&self,
-		algorithm: &'static SignatureAlgorithm,
-		public_key: &[u8],
 		message: &[u8],
 		signature_bytes: &[u8],
+		public_key: &[u8],
+		algorithm: &'static SignatureAlgorithm,
 	) -> Result<(), Error> {
 		let verification_algorithm: &'static dyn VerificationAlgorithm =
 			if algorithm == &PKCS_ECDSA_P256_SHA256 {

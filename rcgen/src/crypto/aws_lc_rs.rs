@@ -122,14 +122,17 @@ impl AwsLcProvider {
 							PqdsaKeyPair::from_pkcs8(signing_algorithm, key_der)
 								.map_err(|e| Error::RingKeyRejected(e.to_string()))?,
 						),
-						algorithm,
+						alg: algorithm,
 					});
 				}
 			}
 			return Err(Error::UnsupportedSignatureAlgorithm);
 		};
 
-		Ok(AwsLcSigningKey { kind, algorithm })
+		Ok(AwsLcSigningKey {
+			kind,
+			alg: algorithm,
+		})
 	}
 
 	fn detect(&self, key_der: &[u8], is_pkcs8: bool) -> Result<AwsLcSigningKey, Error> {
@@ -155,61 +158,69 @@ impl AwsLcProvider {
 
 	fn generate_ecdsa(
 		&self,
-		algorithm: &'static SignatureAlgorithm,
-		signing_algorithm: &'static signature::EcdsaSigningAlgorithm,
+		alg: &'static SignatureAlgorithm,
+		sign_alg: &'static signature::EcdsaSigningAlgorithm,
 	) -> Result<KeyPair, Error> {
-		let document = EcdsaKeyPair::generate_pkcs8(signing_algorithm, &SystemRandom::new())
+		let key_pair_doc = EcdsaKeyPair::generate_pkcs8(sign_alg, &SystemRandom::new())
 			.map_err(|_| Error::RingUnspecified)?;
-		let serialized_der = document.as_ref().to_vec();
-		let signing_key = self.load_with_algorithm(&serialized_der, true, algorithm)?;
+		let key_pair_serialized = key_pair_doc.as_ref().to_vec();
+		let key_pair = EcdsaKeyPair::from_pkcs8(sign_alg, key_pair_doc.as_ref()).unwrap();
 		Ok(KeyPair::from_signing_key(
-			Box::new(signing_key),
-			serialized_der,
+			Box::new(AwsLcSigningKey {
+				kind: AwsLcKeyKind::Ec(key_pair),
+				alg,
+			}),
+			key_pair_serialized,
 		))
 	}
 
 	fn generate_rsa_inner(
 		&self,
-		algorithm: &'static SignatureAlgorithm,
+		alg: &'static SignatureAlgorithm,
 		key_size: KeySize,
 	) -> Result<KeyPair, Error> {
-		if algorithm != &PKCS_RSA_SHA256
-			&& algorithm != &PKCS_RSA_SHA384
-			&& algorithm != &PKCS_RSA_SHA512
-		{
+		let sign_alg: &'static dyn RsaEncoding = if alg == &PKCS_RSA_SHA256 {
+			&signature::RSA_PKCS1_SHA256
+		} else if alg == &PKCS_RSA_SHA384 {
+			&signature::RSA_PKCS1_SHA384
+		} else if alg == &PKCS_RSA_SHA512 {
+			&signature::RSA_PKCS1_SHA512
+		} else {
 			return Err(Error::KeyGenerationUnavailable);
-		}
-		let key = RsaKeyPair::generate(key_size).map_err(|_| Error::RingUnspecified)?;
-		let serialized_der = key
+		};
+		let key_pair = RsaKeyPair::generate(key_size).map_err(|_| Error::RingUnspecified)?;
+		let key_pair_serialized = key_pair
 			.as_der()
 			.map_err(|_| Error::RingUnspecified)?
 			.as_ref()
 			.to_vec();
-		let signing_key = self.load_with_algorithm(&serialized_der, true, algorithm)?;
 		Ok(KeyPair::from_signing_key(
-			Box::new(signing_key),
-			serialized_der,
+			Box::new(AwsLcSigningKey {
+				kind: AwsLcKeyKind::Rsa(key_pair, sign_alg),
+				alg,
+			}),
+			key_pair_serialized,
 		))
 	}
 
 	#[cfg(feature = "aws_lc_rs")]
 	fn generate_pqdsa(
 		&self,
-		algorithm: &'static SignatureAlgorithm,
-		signing_algorithm: &'static PqdsaSigningAlgorithm,
+		alg: &'static SignatureAlgorithm,
+		sign_alg: &'static PqdsaSigningAlgorithm,
 	) -> Result<KeyPair, Error> {
-		let key = PqdsaKeyPair::generate(signing_algorithm).map_err(|_| Error::RingUnspecified)?;
-		let serialized_der = key
+		let key_pair = PqdsaKeyPair::generate(sign_alg).map_err(|_| Error::RingUnspecified)?;
+		let key_pair_serialized = key_pair
 			.to_pkcs8v1()
 			.map_err(|_| Error::RingUnspecified)?
 			.as_ref()
 			.to_vec();
 		Ok(KeyPair::from_signing_key(
 			Box::new(AwsLcSigningKey {
-				kind: AwsLcKeyKind::Pq(key),
-				algorithm,
+				kind: AwsLcKeyKind::Pq(key_pair),
+				alg,
 			}),
-			serialized_der,
+			key_pair_serialized,
 		))
 	}
 }
@@ -247,13 +258,16 @@ impl CryptoProvider for AwsLcProvider {
 		} else if algorithm == &PKCS_ECDSA_P521_SHA512 {
 			self.generate_ecdsa(algorithm, &signature::ECDSA_P521_SHA512_ASN1_SIGNING)
 		} else if algorithm == &PKCS_ED25519 {
-			let document = Ed25519KeyPair::generate_pkcs8(&SystemRandom::new())
+			let key_pair_doc = Ed25519KeyPair::generate_pkcs8(&SystemRandom::new())
 				.map_err(|_| Error::RingUnspecified)?;
-			let serialized_der = document.as_ref().to_vec();
-			let signing_key = self.load_with_algorithm(&serialized_der, true, algorithm)?;
+			let key_pair_serialized = key_pair_doc.as_ref().to_vec();
+			let key_pair = Ed25519KeyPair::from_pkcs8(key_pair_doc.as_ref()).unwrap();
 			Ok(KeyPair::from_signing_key(
-				Box::new(signing_key),
-				serialized_der,
+				Box::new(AwsLcSigningKey {
+					kind: AwsLcKeyKind::Ed(key_pair),
+					alg: algorithm,
+				}),
+				key_pair_serialized,
 			))
 		} else if is_rsa {
 			let key_size = match key_size.unwrap_or(RsaKeySize::_2048) {
@@ -360,47 +374,51 @@ enum AwsLcKeyKind {
 
 struct AwsLcSigningKey {
 	kind: AwsLcKeyKind,
-	algorithm: &'static SignatureAlgorithm,
+	alg: &'static SignatureAlgorithm,
 }
 
 impl PublicKeyData for AwsLcSigningKey {
 	fn der_bytes(&self) -> &[u8] {
 		match &self.kind {
-			AwsLcKeyKind::Ec(key) => key.public_key().as_ref(),
-			AwsLcKeyKind::Ed(key) => key.public_key().as_ref(),
+			AwsLcKeyKind::Ec(kp) => kp.public_key().as_ref(),
+			AwsLcKeyKind::Ed(kp) => kp.public_key().as_ref(),
 			#[cfg(feature = "aws_lc_rs")]
-			AwsLcKeyKind::Pq(key) => key.public_key().as_ref(),
-			AwsLcKeyKind::Rsa(key, _) => key.public_key().as_ref(),
+			AwsLcKeyKind::Pq(kp) => kp.public_key().as_ref(),
+			AwsLcKeyKind::Rsa(kp, _) => kp.public_key().as_ref(),
 		}
 	}
 
 	fn algorithm(&self) -> &'static SignatureAlgorithm {
-		self.algorithm
+		self.alg
 	}
 }
 
 impl SigningKey for AwsLcSigningKey {
-	fn sign(&self, message: &[u8]) -> Result<Vec<u8>, Error> {
-		match &self.kind {
-			AwsLcKeyKind::Ec(key) => key
-				.sign(&SystemRandom::new(), message)
-				.map(|signature| signature.as_ref().to_vec())
-				.map_err(|_| Error::RingUnspecified),
-			AwsLcKeyKind::Ed(key) => Ok(key.sign(message).as_ref().to_vec()),
+	fn sign(&self, msg: &[u8]) -> Result<Vec<u8>, Error> {
+		Ok(match &self.kind {
+			AwsLcKeyKind::Ec(kp) => {
+				let system_random = SystemRandom::new();
+				let signature = kp
+					.sign(&system_random, msg)
+					.map_err(|_| Error::RingUnspecified)?;
+				signature.as_ref().to_owned()
+			},
+			AwsLcKeyKind::Ed(kp) => kp.sign(msg).as_ref().to_owned(),
 			#[cfg(feature = "aws_lc_rs")]
-			AwsLcKeyKind::Pq(key) => {
-				let mut signature = vec![0; key.algorithm().signature_len()];
-				key.sign(message, &mut signature)
+			AwsLcKeyKind::Pq(kp) => {
+				let mut signature = vec![0; kp.algorithm().signature_len()];
+				kp.sign(msg, &mut signature)
 					.map_err(|_| Error::RingUnspecified)?;
-				Ok(signature)
+				signature
 			},
-			AwsLcKeyKind::Rsa(key, encoding) => {
-				let mut signature = vec![0; key.public_modulus_len()];
-				key.sign(*encoding, &SystemRandom::new(), message, &mut signature)
+			AwsLcKeyKind::Rsa(kp, padding_alg) => {
+				let system_random = SystemRandom::new();
+				let mut signature = vec![0; kp.public_modulus_len()];
+				kp.sign(*padding_alg, &system_random, msg, &mut signature)
 					.map_err(|_| Error::RingUnspecified)?;
-				Ok(signature)
+				signature
 			},
-		}
+		})
 	}
 }
 

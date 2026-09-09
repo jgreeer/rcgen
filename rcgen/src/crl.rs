@@ -209,10 +209,6 @@ impl CertificateRevocationListParams {
 		issuer: &Issuer<'_, impl SigningKey>,
 		provider: &dyn CryptoProvider,
 	) -> Result<Vec<u8>, Error> {
-		let key_identifier = self
-			.key_identifier_method
-			.derive(provider, issuer.signing_key.subject_public_key_info());
-
 		sign_der(&issuer.signing_key, |writer| {
 			// Write CRL version.
 			// RFC 5280 §5.1.2.1:
@@ -273,7 +269,11 @@ impl CertificateRevocationListParams {
 			writer.next().write_tagged(Tag::context(0), |writer| {
 				writer.write_sequence(|writer| {
 					// Write authority key identifier.
-					write_x509_authority_key_identifier(writer.next(), key_identifier.clone());
+					write_x509_authority_key_identifier(
+						writer.next(),
+						self.key_identifier_method
+							.derive(provider, issuer.signing_key.subject_public_key_info()),
+					);
 
 					// Write CRL number.
 					write_x509_extension(writer.next(), oid::CRL_NUMBER, false, |writer| {
@@ -418,7 +418,7 @@ impl RevokedCertParams {
 	}
 }
 
-#[cfg(all(test, any(feature = "ring", feature = "aws_lc_rs")))]
+#[cfg(all(test, any(feature = "ring", feature = "aws_lc_rs", feature = "fips")))]
 mod tests {
 	use x509_parser::num_bigint::BigUint;
 	use x509_parser::{oid_registry, parse_x509_crl};

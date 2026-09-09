@@ -12,9 +12,9 @@ use rcgen::{
 };
 
 fn provider() -> &'static dyn CryptoProvider {
-	#[cfg(feature = "aws_lc_rs")]
+	#[cfg(any(feature = "aws_lc_rs", feature = "fips"))]
 	return rcgen::crypto::aws_lc_rs::default_provider();
-	#[cfg(all(feature = "ring", not(feature = "aws_lc_rs")))]
+	#[cfg(all(feature = "ring", not(any(feature = "aws_lc_rs", feature = "fips"))))]
 	return rcgen::crypto::ring::default_provider();
 }
 

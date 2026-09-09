@@ -14,7 +14,7 @@ keywords.workspace = true
 default = ["pem"]
 aws_lc_rs = ["dep:aws-lc-rs", "aws-lc-rs/aws-lc-sys"]
 aws_lc_rs_unstable = ["aws_lc_rs"] # For backwards compatibility only
-fips = ["aws-lc-rs?/fips"]
+fips = ["dep:aws-lc-rs", "aws-lc-rs/fips"]
 ring = ["dep:ring"]
 
 [dependencies]

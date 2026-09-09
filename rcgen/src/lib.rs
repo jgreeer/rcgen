@@ -37,9 +37,6 @@ println!("{}", signing_key.serialize_pem());
 #![cfg_attr(rcgen_docsrs, feature(doc_cfg))]
 #![warn(unreachable_pub)]
 
-#[cfg(all(feature = "fips", not(feature = "aws_lc_rs")))]
-compile_error!("the 'fips' feature currently requires the 'aws_lc_rs' feature");
-
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
@@ -83,11 +80,11 @@ mod oid;
 mod sign_algo;
 pub mod string;
 
-#[cfg(all(test, any(feature = "ring", feature = "aws_lc_rs")))]
+#[cfg(all(test, any(feature = "ring", feature = "aws_lc_rs", feature = "fips")))]
 pub(crate) fn test_provider() -> &'static dyn CryptoProvider {
-	#[cfg(feature = "aws_lc_rs")]
+	#[cfg(any(feature = "aws_lc_rs", feature = "fips"))]
 	return crypto::aws_lc_rs::default_provider();
-	#[cfg(all(feature = "ring", not(feature = "aws_lc_rs")))]
+	#[cfg(all(feature = "ring", not(any(feature = "aws_lc_rs", feature = "fips"))))]
 	return crypto::ring::default_provider();
 }
 
@@ -163,9 +160,8 @@ impl<'a, S: SigningKey> CertifiedIssuer<'a, S> {
 		signing_key: S,
 		provider: &dyn CryptoProvider,
 	) -> Result<Self, Error> {
-		let certificate = params.self_signed(&signing_key, provider)?;
 		Ok(Self {
-			certificate,
+			certificate: params.self_signed(&signing_key, provider)?,
 			issuer: Issuer::new(params, signing_key),
 		})
 	}
@@ -177,9 +173,8 @@ impl<'a, S: SigningKey> CertifiedIssuer<'a, S> {
 		issuer: &Issuer<'_, impl SigningKey>,
 		provider: &dyn CryptoProvider,
 	) -> Result<Self, Error> {
-		let certificate = params.signed_by(&signing_key, issuer, provider)?;
 		Ok(Self {
-			certificate,
+			certificate: params.signed_by(&signing_key, issuer, provider)?,
 			issuer: Issuer::new(params, signing_key),
 		})
 	}
@@ -341,7 +336,7 @@ impl SanType {
 	#[cfg(all(
 		test,
 		feature = "x509-parser",
-		any(feature = "ring", feature = "aws_lc_rs")
+		any(feature = "ring", feature = "aws_lc_rs", feature = "fips")
 	))]
 	fn from_x509(x509: &x509_parser::certificate::X509Certificate<'_>) -> Result<Vec<Self>, Error> {
 		let sans = x509
@@ -745,10 +740,10 @@ impl KeyIdMethod {
 			Self::Sha256 => HashAlgorithm::Sha256,
 			Self::Sha384 => HashAlgorithm::Sha384,
 			Self::Sha512 => HashAlgorithm::Sha512,
-			Self::PreSpecified(value) => return value.clone(),
+			Self::PreSpecified(b) => return b.to_vec(),
 		};
 		let digest = provider.hash(algorithm, subject_public_key_info.as_ref());
-		digest.as_ref()[..20].to_vec()
+		digest.as_ref()[0..20].to_vec()
 	}
 }
 

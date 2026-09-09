@@ -6,7 +6,7 @@
 
 Simple Rust library to generate X.509 certificates.
 
-```rust
+```Rust
 use rcgen::{generate_simple_self_signed, CertifiedKey};
 let provider = rcgen::crypto::ring::default_provider();
 // Generate a certificate that's valid for "localhost" and "hello.world.example"
@@ -21,9 +21,8 @@ println!("{}", signing_key.serialize_pem());
 
 ## Cryptography providers
 
-Rcgen does not select a cryptography provider. Ring and AWS-LC are available through the `ring`
-and `aws_lc_rs` features, respectively. AWS-LC FIPS mode requires both the `aws_lc_rs` and
-`fips` features.
+Rcgen does not select a cryptography provider by default. Ring and AWS-LC are available through
+the `ring` and `aws_lc_rs` features, respectively.
 
 Enable a built-in provider explicitly:
 

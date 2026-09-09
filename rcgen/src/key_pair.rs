@@ -98,9 +98,11 @@ impl KeyPair {
 	#[cfg(feature = "pem")]
 	pub fn from_pem(pem_str: &str, provider: &dyn CryptoProvider) -> Result<Self, Error> {
 		let private_key = pem::parse(pem_str)._err()?;
-		let private_key = PrivateKeyDer::try_from(private_key.into_contents())
-			.map_err(|_| Error::CouldNotParseKeyPair)?;
-		Self::from_der(&private_key, provider)
+		let private_key: &[_] = private_key.contents();
+		Self::from_der(
+			&PrivateKeyDer::try_from(private_key).map_err(|_| Error::CouldNotParseKeyPair)?,
+			provider,
+		)
 	}
 
 	/// Obtains the key pair from a PEM formatted key
@@ -117,8 +119,12 @@ impl KeyPair {
 		provider: &dyn CryptoProvider,
 	) -> Result<Self, Error> {
 		let private_key = pem::parse(pem_str)._err()?;
-		let private_key = PrivatePkcs8KeyDer::from(private_key.into_contents());
-		Self::from_pkcs8_der_and_sign_algo(&private_key, alg, provider)
+		let private_key_der: &[_] = private_key.contents();
+		Self::from_pkcs8_der_and_sign_algo(
+			&PrivatePkcs8KeyDer::from(private_key_der),
+			alg,
+			provider,
+		)
 	}
 
 	/// Obtains the key pair from a DER formatted key using the specified [`SignatureAlgorithm`]
@@ -162,9 +168,12 @@ impl KeyPair {
 		provider: &dyn CryptoProvider,
 	) -> Result<Self, Error> {
 		let private_key = pem::parse(pem_str)._err()?;
-		let private_key = PrivateKeyDer::try_from(private_key.into_contents())
-			.map_err(|_| Error::CouldNotParseKeyPair)?;
-		Self::from_der_and_sign_algo(&private_key, alg, provider)
+		let private_key: &[_] = private_key.contents();
+		Self::from_der_and_sign_algo(
+			&PrivateKeyDer::try_from(private_key).map_err(|_| Error::CouldNotParseKeyPair)?,
+			alg,
+			provider,
+		)
 	}
 
 	/// Obtains the key pair from a DER formatted key
@@ -242,7 +251,8 @@ impl KeyPair {
 	/// Serializes the key pair (including the private key) in PKCS#8 format in PEM
 	#[cfg(feature = "pem")]
 	pub fn serialize_pem(&self) -> String {
-		let p = Pem::new("PRIVATE KEY", self.serialize_der());
+		let contents = self.serialize_der();
+		let p = Pem::new("PRIVATE KEY", contents);
 		pem::encode_config(&p, ENCODE_CONFIG)
 	}
 }
@@ -315,12 +325,6 @@ impl<S: SigningKey + ?Sized> SigningKey for &S {
 	}
 }
 
-impl<S: SigningKey + ?Sized> SigningKey for Box<S> {
-	fn sign(&self, msg: &[u8]) -> Result<Vec<u8>, Error> {
-		(**self).sign(msg)
-	}
-}
-
 /// A key that can be used to sign messages
 pub trait SigningKey: PublicKeyData {
 	/// Signs `msg` using the selected algorithm
@@ -364,11 +368,16 @@ impl SubjectPublicKeyInfo {
 
 		let alg = SignatureAlgorithm::iter()
 			.find(|alg| {
-				let bytes = yasna::construct_der(|writer| alg.write_oids_sign_alg(writer));
+				let bytes = yasna::construct_der(|writer| {
+					alg.write_oids_sign_alg(writer);
+				});
 				let Ok((rest, aid)) = AlgorithmIdentifier::from_der(&bytes) else {
 					return false;
 				};
-				rest.is_empty() && aid == spki.algorithm
+				if !rest.is_empty() {
+					return false;
+				}
+				aid == spki.algorithm
 			})
 			.ok_or(Error::UnsupportedSignatureAlgorithm)?;
 
@@ -399,16 +408,6 @@ impl<K: PublicKeyData + ?Sized> PublicKeyData for &K {
 	}
 }
 
-impl<K: PublicKeyData + ?Sized> PublicKeyData for Box<K> {
-	fn der_bytes(&self) -> &[u8] {
-		(**self).der_bytes()
-	}
-
-	fn algorithm(&self) -> &'static SignatureAlgorithm {
-		(**self).algorithm()
-	}
-}
-
 /// The public key data of a key pair
 pub trait PublicKeyData {
 	/// The public key data in DER format
@@ -434,7 +433,7 @@ pub(crate) fn serialize_public_key_der(key: &(impl PublicKeyData + ?Sized), writ
 	})
 }
 
-#[cfg(all(test, any(feature = "ring", feature = "aws_lc_rs")))]
+#[cfg(all(test, any(feature = "ring", feature = "aws_lc_rs", feature = "fips")))]
 mod test {
 	use super::*;
 
@@ -445,9 +444,9 @@ mod test {
 			&PKCS_ED25519,
 			&PKCS_ECDSA_P256_SHA256,
 			&PKCS_ECDSA_P384_SHA384,
-			#[cfg(all(feature = "aws_lc_rs", not(feature = "ring")))]
+			#[cfg(all(any(feature = "aws_lc_rs", feature = "fips"), not(feature = "ring")))]
 			&PKCS_ECDSA_P521_SHA512,
-			#[cfg(all(feature = "aws_lc_rs", not(feature = "ring")))]
+			#[cfg(all(any(feature = "aws_lc_rs", feature = "fips"), not(feature = "ring")))]
 			&PKCS_RSA_SHA256,
 		] {
 			let kp = KeyPair::generate_for(alg, crate::test_provider()).expect("keygen");

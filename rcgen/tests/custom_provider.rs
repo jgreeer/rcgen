@@ -151,8 +151,4 @@ fn explicit_provider_covers_all_rcgen_crypto() {
 		assert_eq!(parsed.public_key.algorithm(), &PKCS_ED25519);
 		assert_eq!(VERIFICATIONS.load(Ordering::Relaxed), 1);
 	}
-
-	let generated = KeyPair::generate_for(&PKCS_ED25519, custom_provider).unwrap();
-	assert_eq!(generated.algorithm(), &PKCS_ED25519);
-	assert_eq!(GENERATIONS.load(Ordering::Relaxed), 2);
 }

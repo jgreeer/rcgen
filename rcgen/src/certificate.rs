@@ -173,7 +173,7 @@ impl CertificateParams {
 	#[cfg(all(
 		test,
 		feature = "x509-parser",
-		any(feature = "ring", feature = "aws_lc_rs")
+		any(feature = "ring", feature = "aws_lc_rs", feature = "fips")
 	))]
 	pub(crate) fn from_ca_cert_der(ca_cert: &CertificateDer<'_>) -> Result<Self, Error> {
 		let (_remainder, x509) = x509_parser::parse_x509_certificate(ca_cert)
@@ -270,12 +270,13 @@ impl CertificateParams {
 		};
 
 		if let Some((pub_key_spki, provider)) = pub_key_spki_and_provider {
-			let subject_key_identifier = self.key_identifier_method.derive(provider, pub_key_spki);
 			write_x509_extension(
 				writer.next(),
 				oid::SUBJECT_KEY_IDENTIFIER,
 				false,
-				|writer| writer.write_bytes(&subject_key_identifier),
+				|writer| {
+					writer.write_bytes(&self.key_identifier_method.derive(provider, pub_key_spki));
+				},
 			);
 		}
 
@@ -779,7 +780,7 @@ impl ExtendedKeyUsagePurpose {
 	#[cfg(all(
 		test,
 		feature = "x509-parser",
-		any(feature = "ring", feature = "aws_lc_rs")
+		any(feature = "ring", feature = "aws_lc_rs", feature = "fips")
 	))]
 	fn from_x509(x509: &x509_parser::certificate::X509Certificate<'_>) -> Result<Vec<Self>, Error> {
 		let extended_key_usage = x509
@@ -848,7 +849,7 @@ impl NameConstraints {
 	#[cfg(all(
 		test,
 		feature = "x509-parser",
-		any(feature = "ring", feature = "aws_lc_rs")
+		any(feature = "ring", feature = "aws_lc_rs", feature = "fips")
 	))]
 	fn from_x509(
 		x509: &x509_parser::certificate::X509Certificate<'_>,
@@ -905,7 +906,7 @@ impl GeneralSubtree {
 	#[cfg(all(
 		test,
 		feature = "x509-parser",
-		any(feature = "ring", feature = "aws_lc_rs")
+		any(feature = "ring", feature = "aws_lc_rs", feature = "fips")
 	))]
 	fn from_x509(
 		subtrees: &[x509_parser::extensions::GeneralSubtree<'_>],
@@ -1081,7 +1082,7 @@ impl IsCa {
 	#[cfg(all(
 		test,
 		feature = "x509-parser",
-		any(feature = "ring", feature = "aws_lc_rs")
+		any(feature = "ring", feature = "aws_lc_rs", feature = "fips")
 	))]
 	fn from_x509(x509: &x509_parser::certificate::X509Certificate<'_>) -> Result<Self, Error> {
 		let basic_constraints = x509
@@ -1131,7 +1132,7 @@ pub enum BasicConstraints {
 	Constrained(u8),
 }
 
-#[cfg(all(test, any(feature = "ring", feature = "aws_lc_rs")))]
+#[cfg(all(test, any(feature = "ring", feature = "aws_lc_rs", feature = "fips")))]
 mod tests {
 	#[cfg(feature = "x509-parser")]
 	use std::net::Ipv4Addr;

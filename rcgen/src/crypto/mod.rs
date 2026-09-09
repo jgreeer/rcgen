@@ -15,7 +15,7 @@ use crate::{Error, KeyPair, RsaKeySize, SignatureAlgorithm};
 pub mod ring;
 
 /// AWS-LC-based cryptography provider.
-#[cfg(feature = "aws_lc_rs")]
+#[cfg(any(feature = "aws_lc_rs", feature = "fips"))]
 pub mod aws_lc_rs;
 
 /// Cryptographic operations used by rcgen.

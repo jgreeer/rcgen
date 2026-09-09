@@ -71,7 +71,10 @@ impl RingProvider {
 			return Err(Error::UnsupportedSignatureAlgorithm);
 		};
 
-		Ok(RingSigningKey { kind, algorithm })
+		Ok(RingSigningKey {
+			kind,
+			alg: algorithm,
+		})
 	}
 
 	fn detect(&self, pkcs8: &[u8]) -> Result<RingSigningKey, Error> {
@@ -108,42 +111,60 @@ impl CryptoProvider for RingProvider {
 			return Err(Error::KeyGenerationUnavailable);
 		}
 		let rng = SystemRandom::new();
-		let (signing_key, serialized_der) = if algorithm == &PKCS_ECDSA_P256_SHA256 {
-			let document =
+		if algorithm == &PKCS_ECDSA_P256_SHA256 {
+			let key_pair_doc =
 				EcdsaKeyPair::generate_pkcs8(&signature::ECDSA_P256_SHA256_ASN1_SIGNING, &rng)
 					.map_err(|_| Error::RingUnspecified)?;
-			(
-				self.load_with_algorithm(document.as_ref(), algorithm)?,
-				document.as_ref().to_vec(),
+			let key_pair_serialized = key_pair_doc.as_ref().to_vec();
+			let key_pair = Self::ecdsa_from_pkcs8(
+				&signature::ECDSA_P256_SHA256_ASN1_SIGNING,
+				key_pair_doc.as_ref(),
 			)
+			.unwrap();
+			Ok(KeyPair::from_signing_key(
+				Box::new(RingSigningKey {
+					kind: RingKeyKind::Ec(key_pair),
+					alg: algorithm,
+				}),
+				key_pair_serialized,
+			))
 		} else if algorithm == &PKCS_ECDSA_P384_SHA384 {
-			let document =
+			let key_pair_doc =
 				EcdsaKeyPair::generate_pkcs8(&signature::ECDSA_P384_SHA384_ASN1_SIGNING, &rng)
 					.map_err(|_| Error::RingUnspecified)?;
-			(
-				self.load_with_algorithm(document.as_ref(), algorithm)?,
-				document.as_ref().to_vec(),
+			let key_pair_serialized = key_pair_doc.as_ref().to_vec();
+			let key_pair = Self::ecdsa_from_pkcs8(
+				&signature::ECDSA_P384_SHA384_ASN1_SIGNING,
+				key_pair_doc.as_ref(),
 			)
+			.unwrap();
+			Ok(KeyPair::from_signing_key(
+				Box::new(RingSigningKey {
+					kind: RingKeyKind::Ec(key_pair),
+					alg: algorithm,
+				}),
+				key_pair_serialized,
+			))
 		} else if algorithm == &PKCS_ED25519 {
-			let document =
+			let key_pair_doc =
 				Ed25519KeyPair::generate_pkcs8(&rng).map_err(|_| Error::RingUnspecified)?;
-			(
-				self.load_with_algorithm(document.as_ref(), algorithm)?,
-				document.as_ref().to_vec(),
-			)
+			let key_pair_serialized = key_pair_doc.as_ref().to_vec();
+			let key_pair = Ed25519KeyPair::from_pkcs8(key_pair_doc.as_ref()).unwrap();
+			Ok(KeyPair::from_signing_key(
+				Box::new(RingSigningKey {
+					kind: RingKeyKind::Ed(key_pair),
+					alg: algorithm,
+				}),
+				key_pair_serialized,
+			))
 		} else if algorithm == &PKCS_RSA_SHA256
 			|| algorithm == &PKCS_RSA_SHA384
 			|| algorithm == &PKCS_RSA_SHA512
 		{
-			return Err(Error::KeyGenerationUnavailable);
+			Err(Error::KeyGenerationUnavailable)
 		} else {
-			return Err(Error::UnsupportedSignatureAlgorithm);
-		};
-
-		Ok(KeyPair::from_signing_key(
-			Box::new(signing_key),
-			serialized_der,
-		))
+			Err(Error::UnsupportedSignatureAlgorithm)
+		}
 	}
 
 	fn load_private_key(
@@ -203,38 +224,42 @@ enum RingKeyKind {
 
 struct RingSigningKey {
 	kind: RingKeyKind,
-	algorithm: &'static SignatureAlgorithm,
+	alg: &'static SignatureAlgorithm,
 }
 
 impl PublicKeyData for RingSigningKey {
 	fn der_bytes(&self) -> &[u8] {
 		match &self.kind {
-			RingKeyKind::Ec(key) => key.public_key().as_ref(),
-			RingKeyKind::Ed(key) => key.public_key().as_ref(),
-			RingKeyKind::Rsa(key, _) => key.public_key().as_ref(),
+			RingKeyKind::Ec(kp) => kp.public_key().as_ref(),
+			RingKeyKind::Ed(kp) => kp.public_key().as_ref(),
+			RingKeyKind::Rsa(kp, _) => kp.public_key().as_ref(),
 		}
 	}
 
 	fn algorithm(&self) -> &'static SignatureAlgorithm {
-		self.algorithm
+		self.alg
 	}
 }
 
 impl SigningKey for RingSigningKey {
-	fn sign(&self, message: &[u8]) -> Result<Vec<u8>, Error> {
-		match &self.kind {
-			RingKeyKind::Ec(key) => key
-				.sign(&SystemRandom::new(), message)
-				.map(|signature| signature.as_ref().to_vec())
-				.map_err(|_| Error::RingUnspecified),
-			RingKeyKind::Ed(key) => Ok(key.sign(message).as_ref().to_vec()),
-			RingKeyKind::Rsa(key, encoding) => {
-				let mut signature = vec![0; key.public().modulus_len()];
-				key.sign(*encoding, &SystemRandom::new(), message, &mut signature)
+	fn sign(&self, msg: &[u8]) -> Result<Vec<u8>, Error> {
+		Ok(match &self.kind {
+			RingKeyKind::Ec(kp) => {
+				let system_random = SystemRandom::new();
+				let signature = kp
+					.sign(&system_random, msg)
 					.map_err(|_| Error::RingUnspecified)?;
-				Ok(signature)
+				signature.as_ref().to_owned()
 			},
-		}
+			RingKeyKind::Ed(kp) => kp.sign(msg).as_ref().to_owned(),
+			RingKeyKind::Rsa(kp, padding_alg) => {
+				let system_random = SystemRandom::new();
+				let mut signature = vec![0; kp.public().modulus_len()];
+				kp.sign(*padding_alg, &system_random, msg, &mut signature)
+					.map_err(|_| Error::RingUnspecified)?;
+				signature
+			},
+		})
 	}
 }
 

@@ -427,7 +427,9 @@ impl BmpString {
 
 		// FIXME: Update this when `array_chunks` is stabilized.
 		for maybe_char in char::decode_utf16(
-			vec.chunks_exact(2)
+			vec.as_chunks::<2>()
+				.0
+				.iter()
 				.map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]])),
 		) {
 			// We check we only use the BMP subset of Unicode (the first 65 536 code points)
@@ -546,7 +548,9 @@ impl UniversalString {
 
 		// FIXME: Update this when `array_chunks` is stabilized.
 		for maybe_char in vec
-			.chunks_exact(4)
+			.as_chunks::<4>()
+			.0
+			.iter()
 			.map(|chunk| u32::from_be_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
 		{
 			if core::char::from_u32(maybe_char).is_none() {

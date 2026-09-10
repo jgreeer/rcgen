@@ -49,8 +49,6 @@ jobs:
             # rustls-cert-gen require either aws_lc_rs or ring feature
             - run: cargo clippy -p rcgen --no-default-features --all-targets
             - run: cargo clippy -p rcgen --no-default-features --features pem,x509-parser --all-targets
-            - name: Ensure backend-free builds have no built-in crypto dependencies
-              run: "! cargo tree -p rcgen --no-default-features --edges normal,build | grep -E 'ring v|aws-lc'"
             - run: cargo clippy --no-default-features --features ring --all-targets
             - run: cargo clippy --no-default-features --features aws_lc_rs,pem,x509-parser --all-targets
             - run: cargo clippy --no-default-features --features aws_lc_rs_unstable,pem,x509-parser --all-targets

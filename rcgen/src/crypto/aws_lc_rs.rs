@@ -226,13 +226,74 @@ impl AwsLcProvider {
 }
 
 impl CryptoProvider for AwsLcProvider {
-	fn hash(&self, algorithm: HashAlgorithm, input: &[u8]) -> HashOutput {
-		let algorithm = match algorithm {
-			HashAlgorithm::Sha256 => &digest::SHA256,
-			HashAlgorithm::Sha384 => &digest::SHA384,
-			HashAlgorithm::Sha512 => &digest::SHA512,
+	fn verify(
+		&self,
+		message: &[u8],
+		signature_bytes: &[u8],
+		public_key: &[u8],
+		algorithm: &'static SignatureAlgorithm,
+	) -> Result<(), Error> {
+		#[cfg(feature = "aws_lc_rs")]
+		{
+			let pqdsa_algorithm = if algorithm == &PKCS_ML_DSA_44 {
+				Some(&ML_DSA_44)
+			} else if algorithm == &PKCS_ML_DSA_65 {
+				Some(&ML_DSA_65)
+			} else if algorithm == &PKCS_ML_DSA_87 {
+				Some(&ML_DSA_87)
+			} else {
+				None
+			};
+			if let Some(pqdsa_algorithm) = pqdsa_algorithm {
+				return pqdsa_algorithm
+					.verify_sig(public_key, message, signature_bytes)
+					.map_err(|_| Error::SignatureVerificationFailed);
+			}
+		}
+
+		let verification_algorithm: &'static dyn VerificationAlgorithm =
+			if algorithm == &PKCS_ECDSA_P256_SHA256 {
+				&signature::ECDSA_P256_SHA256_ASN1
+			} else if algorithm == &PKCS_ECDSA_P384_SHA384 {
+				&signature::ECDSA_P384_SHA384_ASN1
+			} else if algorithm == &PKCS_ECDSA_P521_SHA256 {
+				&signature::ECDSA_P521_SHA256_ASN1
+			} else if algorithm == &PKCS_ECDSA_P521_SHA384 {
+				&signature::ECDSA_P521_SHA384_ASN1
+			} else if algorithm == &PKCS_ECDSA_P521_SHA512 {
+				&signature::ECDSA_P521_SHA512_ASN1
+			} else if algorithm == &PKCS_ED25519 {
+				&signature::ED25519
+			} else if algorithm == &PKCS_RSA_SHA256 {
+				&signature::RSA_PKCS1_2048_8192_SHA256
+			} else if algorithm == &PKCS_RSA_SHA384 {
+				&signature::RSA_PKCS1_2048_8192_SHA384
+			} else if algorithm == &PKCS_RSA_SHA512 {
+				&signature::RSA_PKCS1_2048_8192_SHA512
+			} else {
+				return Err(Error::UnsupportedSignatureAlgorithm);
+			};
+
+		signature::UnparsedPublicKey::new(verification_algorithm, public_key)
+			.verify(message, signature_bytes)
+			.map_err(|_| Error::SignatureVerificationFailed)
+	}
+
+	fn load_private_key(
+		&self,
+		key_der: PrivateKeyDer<'static>,
+		algorithm: Option<&'static SignatureAlgorithm>,
+	) -> Result<KeyPair, Error> {
+		let is_pkcs8 = matches!(key_der, PrivateKeyDer::Pkcs8(_));
+		let serialized_der = key_der.secret_der().to_vec();
+		let signing_key = match algorithm {
+			Some(algorithm) => self.load_with_algorithm(&serialized_der, is_pkcs8, algorithm)?,
+			None => self.detect(&serialized_der, is_pkcs8)?,
 		};
-		HashOutput::new(digest::digest(algorithm, input).as_ref())
+		Ok(KeyPair::from_signing_key(
+			Box::new(signing_key),
+			serialized_der,
+		))
 	}
 
 	fn generate(
@@ -293,74 +354,13 @@ impl CryptoProvider for AwsLcProvider {
 		}
 	}
 
-	fn load_private_key(
-		&self,
-		key_der: PrivateKeyDer<'static>,
-		algorithm: Option<&'static SignatureAlgorithm>,
-	) -> Result<KeyPair, Error> {
-		let is_pkcs8 = matches!(key_der, PrivateKeyDer::Pkcs8(_));
-		let serialized_der = key_der.secret_der().to_vec();
-		let signing_key = match algorithm {
-			Some(algorithm) => self.load_with_algorithm(&serialized_der, is_pkcs8, algorithm)?,
-			None => self.detect(&serialized_der, is_pkcs8)?,
+	fn hash(&self, algorithm: HashAlgorithm, input: &[u8]) -> HashOutput {
+		let algorithm = match algorithm {
+			HashAlgorithm::Sha256 => &digest::SHA256,
+			HashAlgorithm::Sha384 => &digest::SHA384,
+			HashAlgorithm::Sha512 => &digest::SHA512,
 		};
-		Ok(KeyPair::from_signing_key(
-			Box::new(signing_key),
-			serialized_der,
-		))
-	}
-
-	fn verify(
-		&self,
-		message: &[u8],
-		signature_bytes: &[u8],
-		public_key: &[u8],
-		algorithm: &'static SignatureAlgorithm,
-	) -> Result<(), Error> {
-		#[cfg(feature = "aws_lc_rs")]
-		{
-			let pqdsa_algorithm = if algorithm == &PKCS_ML_DSA_44 {
-				Some(&ML_DSA_44)
-			} else if algorithm == &PKCS_ML_DSA_65 {
-				Some(&ML_DSA_65)
-			} else if algorithm == &PKCS_ML_DSA_87 {
-				Some(&ML_DSA_87)
-			} else {
-				None
-			};
-			if let Some(pqdsa_algorithm) = pqdsa_algorithm {
-				return pqdsa_algorithm
-					.verify_sig(public_key, message, signature_bytes)
-					.map_err(|_| Error::SignatureVerificationFailed);
-			}
-		}
-
-		let verification_algorithm: &'static dyn VerificationAlgorithm =
-			if algorithm == &PKCS_ECDSA_P256_SHA256 {
-				&signature::ECDSA_P256_SHA256_ASN1
-			} else if algorithm == &PKCS_ECDSA_P384_SHA384 {
-				&signature::ECDSA_P384_SHA384_ASN1
-			} else if algorithm == &PKCS_ECDSA_P521_SHA256 {
-				&signature::ECDSA_P521_SHA256_ASN1
-			} else if algorithm == &PKCS_ECDSA_P521_SHA384 {
-				&signature::ECDSA_P521_SHA384_ASN1
-			} else if algorithm == &PKCS_ECDSA_P521_SHA512 {
-				&signature::ECDSA_P521_SHA512_ASN1
-			} else if algorithm == &PKCS_ED25519 {
-				&signature::ED25519
-			} else if algorithm == &PKCS_RSA_SHA256 {
-				&signature::RSA_PKCS1_2048_8192_SHA256
-			} else if algorithm == &PKCS_RSA_SHA384 {
-				&signature::RSA_PKCS1_2048_8192_SHA384
-			} else if algorithm == &PKCS_RSA_SHA512 {
-				&signature::RSA_PKCS1_2048_8192_SHA512
-			} else {
-				return Err(Error::UnsupportedSignatureAlgorithm);
-			};
-
-		signature::UnparsedPublicKey::new(verification_algorithm, public_key)
-			.verify(message, signature_bytes)
-			.map_err(|_| Error::SignatureVerificationFailed)
+		HashOutput::new(digest::digest(algorithm, input).as_ref())
 	}
 }
 

@@ -20,29 +20,6 @@ pub mod aws_lc_rs;
 
 /// Cryptographic operations used by rcgen.
 pub trait CryptoProvider: std::fmt::Debug + Send + Sync {
-	/// Hash `input` with `algorithm`.
-	fn hash(&self, algorithm: HashAlgorithm, input: &[u8]) -> HashOutput;
-
-	/// Generate an exportable key pair for `algorithm`.
-	///
-	/// `key_size` selects an explicit RSA key size. It must be `None` for non-RSA algorithms.
-	fn generate(
-		&self,
-		algorithm: &'static SignatureAlgorithm,
-		key_size: Option<RsaKeySize>,
-	) -> Result<KeyPair, Error>;
-
-	/// Decode and validate an exportable private key.
-	///
-	/// The same key material can support multiple signature algorithms. If `algorithm` is `Some`,
-	/// the key must be loaded for exactly that signature algorithm. If it is `None`, the provider
-	/// detects a supported algorithm from the key.
-	fn load_private_key(
-		&self,
-		key_der: PrivateKeyDer<'static>,
-		algorithm: Option<&'static SignatureAlgorithm>,
-	) -> Result<KeyPair, Error>;
-
 	/// Verify `signature` over `message` using `public_key` and `algorithm`.
 	///
 	/// rcgen uses this operation to verify the self-signature on a parsed PKCS#10 certificate
@@ -55,6 +32,29 @@ pub trait CryptoProvider: std::fmt::Debug + Send + Sync {
 		public_key: &[u8],
 		algorithm: &'static SignatureAlgorithm,
 	) -> Result<(), Error>;
+
+	/// Decode and validate an exportable private key.
+	///
+	/// The same key material can support multiple signature algorithms. If `algorithm` is `Some`,
+	/// the key must be loaded for exactly that signature algorithm. If it is `None`, the provider
+	/// detects a supported algorithm from the key.
+	fn load_private_key(
+		&self,
+		key_der: PrivateKeyDer<'static>,
+		algorithm: Option<&'static SignatureAlgorithm>,
+	) -> Result<KeyPair, Error>;
+
+	/// Generate an exportable key pair for `algorithm`.
+	///
+	/// `key_size` selects an explicit RSA key size. It must be `None` for non-RSA algorithms.
+	fn generate(
+		&self,
+		algorithm: &'static SignatureAlgorithm,
+		key_size: Option<RsaKeySize>,
+	) -> Result<KeyPair, Error>;
+
+	/// Hash `input` with `algorithm`.
+	fn hash(&self, algorithm: HashAlgorithm, input: &[u8]) -> HashOutput;
 }
 
 /// A hash algorithm required by rcgen.

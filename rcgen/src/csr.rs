@@ -7,7 +7,8 @@ use pki_types::CertificateSigningRequestDer;
 #[cfg(feature = "pem")]
 use crate::ENCODE_CONFIG;
 use crate::{
-	Certificate, CertificateParams, Error, Issuer, PublicKeyData, SignatureAlgorithm, SigningKey,
+	Certificate, CertificateParams, Error, Issuer, PublicKeyAlgorithm, PublicKeyData,
+	SignatureAlgorithm, SigningKey,
 };
 #[cfg(feature = "x509-parser")]
 use crate::{DistinguishedName, ExtendedKeyUsagePurpose, GeneralName, IsCa, KeyUsagePurpose};
@@ -31,8 +32,8 @@ impl PublicKeyData for PublicKey {
 		&self.raw
 	}
 
-	fn algorithm(&self) -> &'static SignatureAlgorithm {
-		self.alg
+	fn key_algorithm(&self) -> &'static PublicKeyAlgorithm {
+		self.alg.public_key_algorithm()
 	}
 }
 

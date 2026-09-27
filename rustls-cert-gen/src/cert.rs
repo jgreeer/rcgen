@@ -480,6 +480,8 @@ mod tests {
 
 	#[test]
 	fn key_pair_algorithm_to_keypair() -> anyhow::Result<()> {
+		use rcgen::SigningKey;
+
 		let (keypair, _) = KeyPair::generate_for(KeyPairAlgorithm::Ed25519.into())?;
 		assert_eq!(format!("{:?}", keypair.algorithm()), "ED25519");
 

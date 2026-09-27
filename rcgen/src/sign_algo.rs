@@ -97,6 +97,26 @@ impl SignatureAlgorithm {
 		}
 		Err(Error::UnsupportedSignatureAlgorithm)
 	}
+
+	/// Retrieve the `SignatureAlgorithm` matching a `subjectPublicKeyInfo` algorithm identifier
+	#[cfg(feature = "x509-parser")]
+	pub(crate) fn from_alg_id(
+		alg_id: &x509_parser::x509::AlgorithmIdentifier<'_>,
+	) -> Result<&'static Self, Error> {
+		use x509_parser::prelude::FromDer;
+
+		Self::iter()
+			.find(|alg| {
+				let der = yasna::construct_der(|writer| alg.write_oids_sign_alg(writer));
+				let Ok((rest, parsed)) = x509_parser::x509::AlgorithmIdentifier::from_der(&der)
+				else {
+					return false;
+				};
+				rest.is_empty() && &parsed == alg_id
+			})
+			.copied()
+			.ok_or(Error::UnsupportedSignatureAlgorithm)
+	}
 }
 
 /// The list of supported signature algorithms
